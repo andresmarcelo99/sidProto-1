@@ -1,0 +1,313 @@
+import tkinter
+import PIL
+from PIL import ImageTk
+from PIL import Image
+from tkcalendar import *
+from tkinter import filedialog
+import cv2
+import numpy as np
+from tkinter import messagebox
+import tkinter.font as TkFont
+import tkinter as GUI
+
+date = ""
+state = 0
+
+# Load Yolo
+net = cv2.dnn.readNet("C:\\Users\\Marcelo Andres\\Documents\\YOLO obj detection\\yolov3.weights","C:\\Users\\Marcelo Andres\\Documents\\YOLO obj detection\\yolov3.cfg")
+classes = []
+with open("C:\\Users\\Marcelo Andres\\Documents\\YOLO obj detection\\coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
+layers_name = net.getLayerNames()
+
+output_layers = [layers_name[i[0]-1] for i in net.getUnconnectedOutLayers()]
+
+colors = np.random.uniform(0,255, size = (len(classes),3))
+
+class FullScreenApp(object):
+    def __init__(self, master, **kwargs):
+        self.master=master
+        pad=3
+        self._geom='200x200+0+0'
+        master.geometry("{0}x{1}+0+0".format(
+            master.winfo_screenwidth()-pad, master.winfo_screenheight()-pad))
+        master.bind('<Escape>',self.toggle_geom)
+    def toggle_geom(self,event):
+        geom=self.master.winfo_geometry()
+        print(geom,self._geom)
+        self.master.geometry(self._geom)
+        self._geom=geom
+
+def date_func():
+
+    def cal_val():
+        messagebox.showinfo("your date is", cal.get_date())
+        global date
+        date = cal.get_date()
+
+    top = tkinter.Toplevel(intro_scr)
+    cal = Calendar(top, font = "Arial 14", selectmode = "day", year = 2020, month = 5, day = 15)
+    cal.pack(fill= "both", expand = True)
+    btn3 = tkinter.Button(top, text = "Guardar", command = cal_val)
+    btn3.pack()
+
+def save_info():
+    emp_info = cod_emp.get()
+    date_info = date
+    prod_type_info = clicked_type.get()
+    ubi_info = ubicaciones_var.get()
+    codigos_info = codigos_var.get()
+    descrip_info = descripcion_var.get()
+    inv_info = inventario_var.get()
+
+    file = open("C:\\Users\\Marcelo Andres\\Documents\\py files\\SID PROT1\\user.txt","w")
+    file.write(emp_info)
+    file.write("\n")
+    file.write(date_info)
+    file.write("\n")
+    file.write(prod_type_info)
+    file.write("\n")
+    file.write(prod_type_info)
+    file.write("\n")
+    file.write(str(ubi_info))
+    file.write("\n")
+    file.write(codigos_info)
+    file.write("\n")
+    file.write(descrip_info)
+    file.write("\n")
+    file.write(str(inv_info))
+    file.write("\n")
+    file.close()
+
+def openFile():
+
+    global panel
+    global img_conver
+    global qtyObjs
+    qtyObjs = 0
+
+    screen.filename = filedialog.askopenfilename(initialdir = "C:/Users/Marcelo Andres/Documents/py files/SID PROT1/inventario", title = "Select a file" )
+    my_image = ImageTk.PhotoImage(Image.open(screen.filename))
+
+    #object detection
+    original_img = cv2.imread(screen.filename)
+    height, width, channels = original_img.shape
+    blob = cv2.dnn.blobFromImage(original_img, 0.00392,(416,416),(0,0,0), True,crop=False)
+
+    #for b in blob:
+        #for n, img_blob in enumerate(b):
+            #cv2.imshow(str(n), img_blob)
+
+    net.setInput(blob)
+    outs = net.forward(output_layers)
+
+    class_ids = []
+    confidences = []
+    boxes = []
+
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:
+                #obj detected
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+
+                #rect coordinates
+                x = int(center_x - w/2)
+                y = int(center_y - h/2)
+
+                boxes.append([x,y,w,h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+
+    font = cv2.FONT_HERSHEY_PLAIN
+    indexes = cv2.dnn.NMSBoxes(boxes,confidences, 0.5,0.4)
+    print(indexes)
+    number_objects_detected = len(boxes)
+    for i in range(len(boxes)):
+
+        if i in indexes:
+            x,y,w,h = boxes[i]
+            label = str(classes[class_ids[i]])
+            color = colors[i]
+            cv2.rectangle(original_img,(x,y),(x+w,y+h),color,2)
+            cv2.putText(original_img,label,(x,y+30),font,1,color,2)
+            if clicked_type.get() == "Botellas":
+                if label == "bottle":
+                    qtyObjs = qtyObjs +1
+    #output of real inventory since qtyObj is local to openFile def
+    label_invR_curr = tkinter.Label(frame_ubi_main, text = qtyObjs, borderwidth = 1, relief = "solid")
+    label_invR_curr.grid(row = 1, column = 4)
+    label_dif_curr = tkinter.Label(frame_ubi_main, text = inventario_var.get() - qtyObjs, borderwidth = 1, relief = "solid")
+    label_dif_curr.grid(row = 1, column = 5)
+
+    font = cv2.FONT_HERSHEY_COMPLEX
+    cv2.putText(original_img,str(qtyObjs), (15,680),font,1,(0,0,255),2)
+
+    #resize
+    widthcv2 = 600
+    lengthcv2 = 400
+    dim = (widthcv2,lengthcv2)
+    original_img = cv2.resize(original_img, dim, interpolation =  cv2.INTER_AREA)
+
+    #convert for tkinter display
+    img_conver = Image.fromarray(original_img)
+    img_conver = ImageTk.PhotoImage(img_conver)
+
+    panel = tkinter.Label(screen, image = img_conver)
+    panel.image = img_conver
+    panel.place(x = 700, y = 60)
+    print("success")
+
+
+def enterMain():
+    global screen
+    screen = tkinter.Toplevel() # initialize
+    app = FullScreenApp(screen)
+    screen.title("SID Form") # name the window
+
+    #setting frame grid for main screen
+    global frame_ubi_main
+    frame_ubi_main = tkinter.Frame(screen,width=400, height=270)
+    frame_ubi_main.place(x=90,y=200)
+    frame_ubi_main.config(background='gray')
+
+    label_ubi_main = tkinter.Label(frame_ubi_main, text = "Ubicaciones", borderwidth = 1, relief = "solid")
+    label_ubi_main.grid(row = 0, column = 0)
+    label_ubi_curr = tkinter.Label(frame_ubi_main, text = ubicaciones_var.get() , borderwidth = 1, relief = "solid")
+    label_ubi_curr.grid(row = 1, column = 0)
+
+    label_cod_main = tkinter.Label(frame_ubi_main, text = "Codigo", borderwidth = 1 , relief = "solid")
+    label_cod_main.grid(row = 0, column = 1)
+    label_cod_curr = tkinter.Label(frame_ubi_main, text = codigos_var.get() , borderwidth = 1 , relief = "solid")
+    label_cod_curr.grid(row = 1, column = 1)
+
+    label_descrip_main = tkinter.Label(frame_ubi_main, text = "Descripcion", borderwidth = 1, relief = "solid")
+    label_descrip_main.grid(row = 0, column = 2)
+    label_descrip_curr = tkinter.Label(frame_ubi_main, text = descripcion_var.get(), borderwidth = 1, relief = "solid")
+    label_descrip_curr.grid(row = 1, column = 2)
+
+    label_inv_main = tkinter.Label(frame_ubi_main, text = "Inventario Teorico", borderwidth = 1, relief = "solid")
+    label_inv_main.grid(row = 0, column = 3)
+    label_inv_curr = tkinter.Label(frame_ubi_main, text = inventario_var.get(), borderwidth = 1, relief = "solid")
+    label_inv_curr.grid(row = 1, column = 3)
+
+    label_invR_main = tkinter.Label(frame_ubi_main, text = "Inventario Real", borderwidth = 1, relief = "solid")
+    label_invR_main.grid(row = 0, column = 4)
+
+    label_dif_main = tkinter.Label(frame_ubi_main, text = "Diferencia", borderwidth = 1, relief = "solid")
+    label_dif_main.grid(row = 0, column = 5)
+
+
+    #opening file
+    file_btn = tkinter.Button(screen, text = "open file", command = openFile)
+    file_btn.place(x=1000, y = 600)
+
+    #grid
+    #e = tkinter.Entry(screen,width = 50)
+    #e.place(x = 20, y = 300)
+
+    cod_emp_text = tkinter.Label(screen, text = "Empleado: " + cod_emp.get())
+    cod_emp_text.place(x = 40, y = 80)
+
+    date_text = tkinter.Label(screen, text = "Fecha: " + date)
+    date_text.place(x = 220, y = 80)
+
+    prod_type_text = tkinter.Label(screen, text = "Producto: " + clicked_type.get())
+    prod_type_text.place(x = 400, y = 80)
+
+    BackButton = tkinter.Button(screen, text = "Anterior",width = 10)
+    BackButton.place(x = 80, y=600)
+
+    NextButton = tkinter.Button(screen, text = "Siguiente", width =10)
+    NextButton.place(x = 235 , y=600)
+
+    EditButton = tkinter.Button(screen, text = "Editar", width = 10)
+    EditButton.place(x = 400 , y=600)
+    intro_scr.wm_state('iconic')
+
+#heading = tkinter.Label(text = "SID ™", bg = "blue", width=57, height = 2)
+#heading.pack()
+
+#main screen function
+
+#introScreen
+intro_scr = tkinter.Tk()
+intro_scr.geometry("600x600")
+#enter_btn = tkinter.Button(intro_scr,text = "Enter", command = enterMain).pack()
+
+#employee entry label
+cod_emp_text = tkinter.Label(intro_scr, text = "Codidgo Empleado: * ")
+cod_emp_text.place(x = 100, y = 80)
+
+#date label
+date_text = tkinter.Label(intro_scr, text = "Fecha: * ")
+date_text.place(x = 150, y = 150)
+
+#select date button
+date_entry_btn = tkinter.Button(intro_scr, text = "Seleccionar Fecha", width ="16", height = "1", command = date_func)
+date_entry_btn.place(x = 250, y = 150)
+
+
+#type of prod label
+prod_type_text = tkinter.Label(intro_scr, text = "Tipo de producto *")
+prod_type_text.place(x = 100, y = 220)
+
+#select type button
+clicked_type = tkinter.StringVar()
+clicked_type.set("empty")
+
+prod_type_btn = tkinter.OptionMenu(intro_scr, clicked_type, "Botellas", "Otros")
+prod_type_btn.place(x=250, y = 220)
+
+
+#storage variables
+cod_emp =  tkinter.StringVar()
+
+#data input
+cod_emp_entry  = tkinter.Entry(intro_scr, textvariable= cod_emp)
+cod_emp_entry.place(x = 250, y = 80)
+
+#register button
+register = tkinter.Button(intro_scr, text = "Register", width ="6", height = "2", command = lambda:[save_info(), enterMain()])
+register.place(x = 530, y = 530)
+
+
+#frame setup
+frame_ubi = tkinter.Frame(intro_scr,width=400, height=270)
+frame_ubi.place(x=100,y=300)
+frame_ubi.config(background='gray')
+
+ubicaciones_var = tkinter.IntVar()
+label_ubi_title = tkinter.Label(frame_ubi, text = "Ubicaciones", borderwidth = 1, relief = "solid")
+label_ubi_title.grid(row = 0, column = 0)
+ubi_entry = tkinter.Entry(frame_ubi, width = 15, textvariable = ubicaciones_var)
+ubi_entry.grid(row=1,column=0)
+
+codigos_var = tkinter.StringVar()
+label_cod_title = tkinter.Label(frame_ubi, text = "Codigo", borderwidth = 1 , relief = "solid")
+label_cod_title.grid(row = 0, column = 1)
+cod_entry = tkinter.Entry(frame_ubi, width = 15, textvariable = codigos_var)
+cod_entry.grid(row=1,column=1)
+
+descripcion_var = tkinter.StringVar()
+label_descrip_title = tkinter.Label(frame_ubi, text = "Descripcion", borderwidth = 1, relief = "solid")
+label_descrip_title.grid(row = 0, column = 2)
+descripcion_entry = tkinter.Entry(frame_ubi, width = 15, textvariable = descripcion_var)
+descripcion_entry.grid(row=1,column=2)
+
+inventario_var = tkinter.IntVar()
+label_inv_title = tkinter.Label(frame_ubi, text = "Inventario", borderwidth = 1, relief = "solid")
+label_inv_title.grid(row = 0, column = 3)
+inventario_entry = tkinter.Entry(frame_ubi, width = 15, textvariable = inventario_var)
+inventario_entry.grid(row=1,column=3)
+
+
+
+tkinter.mainloop() # keep window open
